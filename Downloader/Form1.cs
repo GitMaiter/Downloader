@@ -2,9 +2,11 @@
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -12,6 +14,11 @@ namespace Downloader
 {
     public partial class Form1 : Form
     {
+
+        private delegate void MyDelegate();
+        private event MyDelegate DownloadEvent;
+        private WebClient myWebClient = new WebClient();
+
         /// <summary>
         /// Dictionary with Title of tools and links to download
         /// </summary>
@@ -32,15 +39,10 @@ namespace Downloader
             { "Battle Net", @"https://www.battle.net/download/getInstallerForGame?os=win&locale=enUS&version=LIVE&gameProgram=BATTLENET_APP&id=244389858.1565729819" }
         };
 
-        private WebClient myWebClient = new WebClient();
-
-        private event AsyncCompletedEventHandler DownloadIsCompleted;
-
         public Form1()
         {
             InitializeComponent();
             UpdateToolsList();
-            DeleteAllDownloadedTools();
         }
 
         private void UpdateToolsList()
@@ -49,62 +51,66 @@ namespace Downloader
             {
                 comboBox.Items.Add(tools.Key);
             }
-
         }
 
-        private  void StartDownload()
+        private void StartDownloadAsync()
         {
             using (myWebClient)
             {
-
-                //await Task.Run(() =>
-               // {
-                    //Action action = () =>
-                        //{
+                new  Thread(() =>
+                {
+                    Action action = (() =>
+                    {
                         foreach (var tool in downloadLinks.Where(x => label.Text.Split('\n').Contains(x.Key)))
                         {
+                            myWebClient = new WebClient();
+                            
                             if (label1.Text == string.Empty)
                             {
                                 label1.Text = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
                             }
 
-                            progressBar1.Maximum = 100;
-                            progressBar1.Minimum = 0;
-                            progressBar1.Value++;
-
-                            myWebClient.DownloadFile(tool.Value, label1.Text + "/" + $"{tool.Key}.exe");
-                           // myWebClient.DownloadFileCompleted += new AsyncCompletedEventHandler(DownloadDataCallback);
-                            // myWebClient.DownloadFileAsync(new Uri(tool.Value), label1.Text + "/" + $"{tool.Key}.exe");
-                             DownloadIsCompleted += new AsyncCompletedEventHandler(DownloadDataCallback);
+                            myWebClient.DownloadFileAsync(new Uri(tool.Value), label1.Text + "/" + $"{tool.Key}.exe");
 
                         }
-                //     };
-                //    if (InvokeRequired)
-                //    {
-                //        Invoke(action);
-                //    }
-                //    else
-                //    {
-                //        action();
-                //    }
-                //});
+                        //delegate + DownloadDataCallback method
+                        //delegate + Install method
+                        DownloadEvent += InstallAllDownloadedTools ;
+
+                        myWebClient.DownloadFileCompleted += new AsyncCompletedEventHandler(DownloadDataCallback);
+
+                    });
+
+                    if (InvokeRequired)
+                    {
+                        Invoke(action);
+                    }
+                    else
+                    {
+                        action();
+                    }
+
+                }).Start();
             }
         }
 
         private void DownloadDataCallback(object s, AsyncCompletedEventArgs e)
         {
             MessageBox.Show($"Download finished successful to {label1.Text} path");
+            // run delegate methods here => DownloadDataCallback and Install methods will be invoked here 
 
-        }
-        private  void DownloadButton_Click(object sender, EventArgs e)
-        {
+            DownloadEvent?.Invoke();
 
-            StartDownload();
-            if (checkBox5.Checked && DownloadIsCompleted != null)
+            if (checkBox5.Checked)
             {
                 InstallAllDownloadedTools();
             }
 
+        }
+
+        private void DownloadButton_Click(object sender, EventArgs e)
+        {
+            StartDownloadAsync();
         }
 
         private void Panel1_Paint(object sender, PaintEventArgs e)
@@ -113,17 +119,8 @@ namespace Downloader
 
         private void ComboBox1_SelectedIndexChanged(object sender, EventArgs e)
         {
-
             label.Show();
             label.Text += $"{comboBox.SelectedItem}\n";
-
-            //if ()
-            //{
-            //    label.Show();
-            //    label.Text += $"{comboBox.SelectedItem}\n\n";
-            //    progressBar1.Visible = true;
-            //    progressBar1.Location = new System.Drawing.Point(label.Location.X + 168, label.Location.Y);
-            //}
         }
 
         private void Label1_Click(object sender, EventArgs e)
@@ -138,14 +135,10 @@ namespace Downloader
         {
             using (var fldrDlg = new FolderBrowserDialog())
             {
-                //fldrDlg.Filter = "Png Files (*.png)|*.png";
-                //fldrDlg.Filter = "Excel Files (*.xls, *.xlsx)|*.xls;*.xlsx|CSV Files (*.csv)|*.csv"
-
                 if (fldrDlg.ShowDialog() == DialogResult.OK)
                 {
                     label1.Text = fldrDlg.SelectedPath;
                 }
-
             }
         }
 
@@ -154,8 +147,7 @@ namespace Downloader
         }
 
         private void progressBar1_Click(object sender, EventArgs e)
-        {
-            
+        {         
         }
 
         private void Button2_Click(object sender, EventArgs e)
@@ -174,54 +166,63 @@ namespace Downloader
 
         private void TextBox2_TextChanged(object sender, EventArgs e)
         {
-
         }
 
         private void TextBox1_TextChanged(object sender, EventArgs e)
         {
-
         }
 
         private void CheckBox6_CheckedChanged(object sender, EventArgs e)
         {
-
         }
 
         private void LinkLabel_Click(object sender, EventArgs e)
         {
-
         }
 
         private void InstallAllDownloadedTools()
         {
             try
             {
-                if (DownloadIsCompleted != null)
+                using (Process myProcess = new Process())
                 {
-                    using (Process myProcess = new Process())
+                    var downloadedTools = Directory.GetFiles(label1.Text, "*.exe");
+
+                    foreach (var tool in downloadedTools)
                     {
-                        myProcess.StartInfo.UseShellExecute = false;
-                        DownloadIsCompleted -= new AsyncCompletedEventHandler(DownloadDataCallback);
-                        myProcess.StartInfo.FileName = $"{label1.Text}\\{downloadLinks.First().Key}";
+                        myProcess.StartInfo.UseShellExecute = true;
+                        myProcess.StartInfo.FileName = tool;
+                        myProcess.StartInfo.Verb = "runas";
                         myProcess.StartInfo.CreateNoWindow = true;
                         myProcess.Start();
                     }
                 }
             }
-            catch (Exception e)
+            catch (Exception ex)
             {
-                Console.WriteLine(e.Message);
+                Console.WriteLine(ex.Message);
+            }
+        }
+
+        private void MyProcessOnExited(object sender, EventArgs e)
+        {
+            if (checkBox6.Checked)
+            {
+                DeleteAllDownloadedTools();
             }
         }
 
         private void DeleteAllDownloadedTools()
         {
-            File.Delete(@"C:\Users\rkobz\Desktop\Temp");
+            File.Delete(label1.Text);
         }
 
         private void CheckBox5_CheckedChanged(object sender, EventArgs e)
         {
+        }
 
+        private void progressBar2_Click(object sender, EventArgs e)
+        {
         }
     }
 }
